@@ -1,0 +1,9 @@
+# docker-compose.yml
+version: '3.8'
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    platform: linux/amd64
+    image: 487148038595.dkr.ecr.eu-west-2.amazonaws.com/url-shortener:v1

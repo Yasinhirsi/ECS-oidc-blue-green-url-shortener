@@ -1,0 +1,36 @@
+{
+    "family": "url-shortener",
+    "networkMode": "awsvpc",
+    "requiresCompatibilities": ["FARGATE"],
+    "cpu": "256",
+    "memory": "512",
+    "executionRoleArn": "arn:aws:iam::487148038595:role/ecsExecutionRole-url-shortener",
+    "taskRoleArn": "arn:aws:iam::487148038595:role/ecsTaskRole-url-shortener",
+    "containerDefinitions": [
+      {
+        "name": "url-shortener",
+        "image": "487148038595.dkr.ecr.eu-west-2.amazonaws.com/url-shortener:20250930-191534",
+        "portMappings": [
+          {
+            "containerPort": 8080,
+            "protocol": "tcp"
+          }
+        ],
+        "logConfiguration": {
+          "logDriver": "awslogs",
+          "options": {
+            "awslogs-group": "/ecs/url-shortener",
+            "awslogs-region": "eu-west-2",
+            "awslogs-stream-prefix": "ecs"
+          }
+        },
+        "environment": [
+          {
+            "name": "TABLE_NAME",
+            "value": "url-shortener"
+          }
+        ]
+      }
+    ]
+  }
+  
