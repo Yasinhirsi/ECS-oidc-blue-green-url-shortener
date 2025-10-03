@@ -1,0 +1,81 @@
+name: Deploy to ECS
+
+on:
+  workflow_dispatch:
+    inputs:
+      task-definition-arn:
+        description: "Task definition ARN to deploy"
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: eu-west-2
+
+      - name: Update appspec.yml with new task definition
+        run: |
+          # Update appspec.yml with the provided task definition ARN
+          jq --arg TASK_DEF_ARN "${{ github.event.inputs.task-definition-arn }}" \
+            '.Resources[0].TargetService.Properties.TaskDefinition = $TASK_DEF_ARN' \
+            revisions/appspec.yml > updated-appspec.yml
+          mv updated-appspec.yml revisions/appspec.yml
+          
+          echo "Updated appspec.yml with task definition: ${{ github.event.inputs.task-definition-arn }}"
+
+      - name: Upload appspec.yml to S3
+        run: |
+          # Upload updated appspec.yml to S3 bucket
+          aws s3 cp revisions/appspec.yml s3://url-shortener-codedeploy-artifacts/appspec.yml
+          echo "Uploaded appspec.yml to S3"
+
+      - name: Create CodeDeploy deployment
+        id: deployment
+        run: |
+          # Create a new deployment
+          DEPLOYMENT_ID=$(aws deploy create-deployment \
+            --application-name url-shortener-codedeploy-app \
+            --deployment-group-name url-shortener-dg \
+            --s3-location bucket=url-shortener-codedeploy-artifacts,key=appspec.yml,bundleType=YAML \
+            --region eu-west-2 \
+            --query 'deploymentId' \
+            --output text)
+          
+          echo "Deployment ID: $DEPLOYMENT_ID"
+          echo "deployment-id=$DEPLOYMENT_ID" >> $GITHUB_OUTPUT
+
+      - name: Wait for deployment completion
+        run: |
+          DEPLOYMENT_ID="${{ steps.deployment.outputs.deployment-id }}"
+          echo "Waiting for deployment $DEPLOYMENT_ID to complete..."
+          
+          # Wait for deployment to complete (with timeout)
+          aws deploy wait deployment-successful --deployment-id $DEPLOYMENT_ID --region eu-west-2
+          
+          if [ $? -eq 0 ]; then
+            echo " Deployment successful!"
+          else
+            echo "Deployment failed!"
+            exit 1
+          fi
+
+      - name: Output deployment results
+        run: |
+          echo "Deployment completed successfully!"
+          echo "Task Definition: ${{ github.event.inputs.task-definition-arn }}"
+          echo "Deployment ID: ${{ steps.deployment.outputs.deployment-id }}"
+          echo ""
+          echo "Your application is now running with the new version!"
