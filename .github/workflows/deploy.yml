@@ -26,33 +26,49 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: eu-west-2
 
-      - name: Create new task definition with updated image
-        id: create-task-def
+      - name: Get latest task definition ARN
+        id: get-task-def
         run: |
-          # Get the current task definition and save to file
-          aws ecs describe-task-definition --task-definition url-shortener --query 'taskDefinition' --output json > current-task-def.json
-          
-          # Update the image in the task definition
-          jq --arg IMAGE "${{ github.event.inputs.image-uri }}" '.containerDefinitions[0].image = $IMAGE' current-task-def.json > updated-task-def.json
-          
-          # Remove fields that shouldn't be in the new task definition
-          jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)' updated-task-def.json > clean-task-def.json
-          
-          # Register the new task definition
-          NEW_ARN=$(aws ecs register-task-definition --cli-input-json file://clean-task-def.json --query 'taskDefinition.taskDefinitionArn' --output text)
-          
-          echo "TASK_DEFINITION_ARN=$NEW_ARN" >> $GITHUB_OUTPUT
-          echo "TASK_DEFINITION_REVISION=$(aws ecs describe-task-definition --task-definition $NEW_ARN --query 'taskDefinition.revision' --output text)" >> $GITHUB_OUTPUT
+          export LATEST_ARN=$(aws ecs describe-services \
+            --cluster url-short-ecs \
+            --services url-shortener-service \
+            --query "services[0].taskDefinition" \
+            --output text)
+          echo "LATEST_ARN=$LATEST_ARN" >> $GITHUB_OUTPUT
+
+      - name: Fetch previous task definition JSON
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition ${{ steps.get-task-def.outputs.LATEST_ARN }} \
+            --query "taskDefinition" \
+            --output json | \
+            jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)' \
+            > old-task-def.json
+
+      - name: Replace image in task definition
+        run: |
+          jq --arg img "${{ github.event.inputs.image-uri }}" \
+            '.containerDefinitions[0].image = $img' old-task-def.json > new-task-def.json
+
+      - name: Register new ECS task definition revision
+        id: register-task-def
+        run: |
+          ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://new-task-def.json \
+            --query "taskDefinition.taskDefinitionArn" \
+            --output text)
+          echo "TASK_DEFINITION_ARN=$ARN" >> $GITHUB_OUTPUT
+          echo "TASK_DEFINITION_REVISION=$(aws ecs describe-task-definition --task-definition $ARN --query 'taskDefinition.revision' --output text)" >> $GITHUB_OUTPUT
 
       - name: Update appspec.yml with new task definition
         run: |
           # Update appspec.yml with the new task definition ARN
-          jq --arg TASK_DEF_ARN "${{ steps.create-task-def.outputs.TASK_DEFINITION_ARN }}" \
+          jq --arg TASK_DEF_ARN "${{ steps.register-task-def.outputs.TASK_DEFINITION_ARN }}" \
             '.Resources[0].TargetService.Properties.TaskDefinition = $TASK_DEF_ARN' \
             revisions/appspec.yml > updated-appspec.yml
           mv updated-appspec.yml revisions/appspec.yml
           
-          echo "Updated appspec.yml with task definition: ${{ steps.create-task-def.outputs.TASK_DEFINITION_ARN }}"
+          echo "Updated appspec.yml with task definition: ${{ steps.register-task-def.outputs.TASK_DEFINITION_ARN }}"
 
       - name: Upload appspec.yml to S3
         run: |
