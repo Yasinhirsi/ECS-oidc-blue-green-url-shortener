@@ -40,7 +40,7 @@ module "alb" {
   app_port                   = 8080
   healthcheck_path           = "/healthz"
   enable_deletion_protection = false
-  certificate_arn             = data.aws_acm_certificate.cert.arn
+  certificate_arn            = data.aws_acm_certificate.cert.arn
 }
 
 module "dynamodb" {

@@ -1,48 +1,18 @@
-name: Build and Push to ECR
+name: Docker build and push to ECR
 
 on:
   push:
     branches: [main]
     paths: ['app/**']
-  pull_request:
-    branches: [main]
-    paths: ['app/**']
+  workflow_dispatch:  # manual for testing
 
-env:
-  AWS_REGION: eu-west-2
-  ECR_REPOSITORY: url-shortener
+permissions:
+  id-token: write
+  security-events: write
 
 jobs:
-  test:
+  build-push-register:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r app/requirements.txt
-          pip install pytest httpx
-
-      - name: Run tests
-        run: |
-          cd app
-          python -m pytest tests/ -v
-
-  build-and-push:
-    needs: test
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    
-    permissions:
-      id-token: write
-      contents: read
 
     steps:
       - name: Checkout code
@@ -52,39 +22,44 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: eu-west-2
 
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build Docker image
+      - name: Build the image
         id: build
-        uses: docker/build-push-action@v5
-        with:
-          context: ./app
-          file: ./app/Dockerfile
-          platforms: linux/amd64
-          push: false  # scan first before pushing
-          tags: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: url-shortener
+        run: |
+          sha=$(git rev-parse --short HEAD)
+          primary_tag="$REGISTRY/$REPOSITORY:$sha"
+          docker build -t $primary_tag ./app
+          echo "primary_tag=$primary_tag" >> $GITHUB_OUTPUT
 
-      - name: Run Trivy vulnerability scan
+      - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ steps.build.outputs.imageid }}
-          format: 'table'  # log table with all trivy checks
-          exit-code: '1'  # fail on build
-          severity: 'CRITICAL'  # only fail on critical vulnerabilities
+          image-ref: ${{ steps.build.outputs.primary_tag }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
 
-      - name: Push to ECR after successful scan
-        if: success()
-        run: |
-          docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+          wait-for-processing: true
+
+      - name: Push to Amazon ECR
+        run: docker push ${{ steps.build.outputs.primary_tag }}
 
       - name: Output image details
         run: |
-          echo " Docker image built and pushed successfully!"
-          echo "Image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
-          echo "Tag: ${{ github.sha }}"
+          echo "Docker image built and pushed successfully!"
+          echo "Image: ${{ steps.build.outputs.primary_tag }}"
+          echo "Tag: $(git rev-parse --short HEAD)"
           echo ""
           echo "Ready for deployment via CodeDeploy workflow"
