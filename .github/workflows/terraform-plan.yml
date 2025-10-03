@@ -27,7 +27,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_TF_ROLE_ARN }}
           aws-region: eu-west-2
 
       - name: Setup TFLint
@@ -83,12 +83,6 @@ jobs:
         run: |
           terraform plan -input=false -no-color -out=tfplan
           terraform show -no-color tfplan > plan.txt
-
-      - name: Upload Plan Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: terraform-plan-${{ github.run_id }}
-          path: plan.txt
 
       - name: Output Plan Results
         run: |
