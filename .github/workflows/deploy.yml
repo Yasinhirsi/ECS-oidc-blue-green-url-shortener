@@ -39,7 +39,7 @@ jobs:
       - name: Upload appspec.yml to S3
         run: |
           # Upload updated appspec.yml to S3 bucket
-          aws s3 cp revisions/appspec.yml s3://url-shortener-codedeploy-artifacts/appspec.yml
+          aws s3 cp revisions/appspec.yml s3://url-shortener-codedeploy-revisions/appspec.yml
           echo "Uploaded appspec.yml to S3"
 
       - name: Create CodeDeploy deployment
@@ -49,7 +49,7 @@ jobs:
           DEPLOYMENT_ID=$(aws deploy create-deployment \
             --application-name url-shortener-codedeploy-app \
             --deployment-group-name url-shortener-dg \
-            --s3-location bucket=url-shortener-codedeploy-artifacts,key=appspec.yml,bundleType=YAML \
+            --s3-location bucket=url-shortener-codedeploy-revisions,key=appspec.yml,bundleType=YAML \
             --region eu-west-2 \
             --query 'deploymentId' \
             --output text)
