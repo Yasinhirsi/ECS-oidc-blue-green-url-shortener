@@ -23,6 +23,11 @@ output "http_listener_arn" {
   value       = aws_lb_listener.http.arn
 }
 
+output "https_listener_arn" {
+  description = "HTTPS listener ARN"
+  value       = aws_lb_listener.HTTPS.arn
+}
+
 output "waf_acl_arn" {
   description = "WAFv2 Web ACL ARN"
   value       = aws_wafv2_web_acl.url-shortener-waf.arn

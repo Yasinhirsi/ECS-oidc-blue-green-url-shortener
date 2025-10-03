@@ -70,7 +70,10 @@ resource "aws_iam_policy" "github_actions_policy" {
         Effect = "Allow"
         Action = [
           "codedeploy:CreateDeployment",
-          "codedeploy:GetDeployment"
+          "codedeploy:GetDeployment",
+          "codedeploy:GetDeploymentConfig",
+          "codedeploy:RegisterApplicationRevision",
+          "codedeploy:GetApplicationRevision"
         ]
         Resource = "*"
       },
@@ -83,6 +86,16 @@ resource "aws_iam_policy" "github_actions_policy" {
           var.ecs_task_role_arn,
           var.codedeploy_role_arn
         ]
+      },
+      {
+        Sid    = "S3CodeDeployBucket"
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject"
+        ]
+        Resource = "arn:aws:s3:::url-shortener-codedeploy-revisions/*"
       }
     ]
   })

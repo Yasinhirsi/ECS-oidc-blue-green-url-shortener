@@ -54,7 +54,7 @@ module "codedeploy" {
   deployment_group_name = "url-shortener-dg"
   cluster_name          = module.ecs.cluster_name
   service_name          = module.ecs.service_name
-  listener_arn          = module.alb.http_listener_arn
+  listener_arn          = module.alb.https_listener_arn
   blue_tg_name          = "blue-tg"
   green_tg_name         = "green-tg"
 }
