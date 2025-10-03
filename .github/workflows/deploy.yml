@@ -62,11 +62,8 @@ jobs:
 
       - name: Update appspec.yml with new task definition
         run: |
-          # Update appspec.yml with the new task definition ARN
-          jq --arg TASK_DEF_ARN "${{ steps.register-task-def.outputs.TASK_DEFINITION_ARN }}" \
-            '.Resources[0].TargetService.Properties.TaskDefinition = $TASK_DEF_ARN' \
-            revisions/appspec.yml > updated-appspec.yml
-          mv updated-appspec.yml revisions/appspec.yml
+          # Update appspec.yml with the new task definition ARN using sed
+          sed -i "s|TaskDefinition: \".*\"|TaskDefinition: \"${{ steps.register-task-def.outputs.TASK_DEFINITION_ARN }}\"|g" revisions/appspec.yml
           
           echo "Updated appspec.yml with task definition: ${{ steps.register-task-def.outputs.TASK_DEFINITION_ARN }}"
 
