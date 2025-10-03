@@ -56,34 +56,12 @@ jobs:
       - name: Push to Amazon ECR
         run: docker push ${{ steps.build.outputs.primary_tag }}
 
-      - name: Create new task definition with updated image
-        id: create-task-def
-        run: |
-          # Get the current task definition
-          CURRENT_TASK_DEF=$(aws ecs describe-task-definition --task-definition url-shortener --query 'taskDefinition' --output json)
-          
-          # Update the image in the task definition
-          NEW_TASK_DEF=$(echo "$CURRENT_TASK_DEF" | jq --arg IMAGE "${{ steps.build.outputs.primary_tag }}" '.containerDefinitions[0].image = $IMAGE')
-          
-          # Remove fields that shouldn't be in the new task definition
-          CLEAN_TASK_DEF=$(echo "$NEW_TASK_DEF" | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
-          
-          # Register the new task definition
-          NEW_ARN=$(echo "$CLEAN_TASK_DEF" | aws ecs register-task-definition --cli-input-json file:///dev/stdin --query 'taskDefinition.taskDefinitionArn' --output text)
-          
-          echo "TASK_DEFINITION_ARN=$NEW_ARN" >> $GITHUB_OUTPUT
-          echo "TASK_DEFINITION_REVISION=$(aws ecs describe-task-definition --task-definition $NEW_ARN --query 'taskDefinition.revision' --output text)" >> $GITHUB_OUTPUT
-
-      - name: Output image and task definition details
+      - name: Output image details
         run: |
           echo "Docker image built and pushed successfully!"
           echo "Image: ${{ steps.build.outputs.primary_tag }}"
           echo "Tag: $(git rev-parse --short HEAD)"
           echo ""
-          echo "New task definition created:"
-          echo "Task Definition ARN: ${{ steps.create-task-def.outputs.TASK_DEFINITION_ARN }}"
-          echo "Revision: ${{ steps.create-task-def.outputs.TASK_DEFINITION_REVISION }}"
-          echo ""
           echo "Ready for deployment via CodeDeploy workflow"
-          echo "Copy this ARN to use in the Deploy workflow:"
-          echo "${{ steps.create-task-def.outputs.TASK_DEFINITION_ARN }}"
+          echo "Copy this image URI to use in the Deploy workflow:"
+          echo "${{ steps.build.outputs.primary_tag }}"
