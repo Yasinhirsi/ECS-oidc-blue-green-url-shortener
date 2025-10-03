@@ -1,0 +1,129 @@
+name: Terraform Apply/Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Terraform action to perform'
+        required: true
+        default: 'apply'
+        type: choice
+        options:
+          - apply
+          - destroy
+      confirm_deployment:
+        description: 'Type "DEPLOY" to confirm (required for apply/destroy)'
+        required: false
+        type: string
+      auto_approve:
+        description: 'Auto-approve changes (use with caution - REQUIRED for destroy)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  security-events: write
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: eu-west-2
+  TF_CLI_ARGS: "-lock-timeout=10m"
+  TF_IN_AUTOMATION: true
+
+jobs:
+  terraform-plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: "./terraform"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: eu-west-2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.2
+
+      - name: Require Manual Confirmation
+        if: github.event.inputs.auto_approve != 'true'
+        run: |
+          if [ "${{ github.event.inputs.confirm_deployment }}" != "DEPLOY" ]; then
+            echo "Deployment not confirmed!"
+            echo "Type 'DEPLOY' in the confirm_deployment field to proceed with ${{ github.event.inputs.action }}"
+            echo "This prevents accidental deployments and ensures you're ready to proceed"
+            exit 1
+          fi
+          echo "Deployment confirmed for ${{ github.event.inputs.action }}"
+
+      - name: Require Auto-approve for Destroy
+        if: github.event.inputs.action == 'destroy' && github.event.inputs.auto_approve != 'true'
+        run: |
+          echo "Destroy operations require auto-approve to prevent state lock issues!"
+          echo "Please check the 'Auto-approve changes' option when running destroy"
+          echo "This ensures the operation completes without manual confirmation"
+          exit 1
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Plan
+        timeout-minutes: 10
+        run: |
+          if [ "${{ github.event.inputs.action }}" = "destroy" ]; then
+            echo "Generating destroy plan..."
+            terraform plan -destroy -input=false -no-color
+          else
+            echo "Generating apply plan..."
+            terraform plan -input=false -no-color -out=tfplan
+          fi
+
+      - name: Terraform Apply
+        if: github.event.inputs.action == 'apply'
+        timeout-minutes: 15
+        run: |
+          if [ "${{ github.event.inputs.auto_approve }}" = "true" ]; then
+            echo "Applying changes with auto-approve..."
+            terraform apply -auto-approve tfplan
+          else
+            echo "Applying changes..."
+            terraform apply tfplan
+          fi
+          echo "Infrastructure deployment completed successfully"
+
+      - name: Terraform Destroy
+        if: github.event.inputs.action == 'destroy'
+        timeout-minutes: 15
+        run: |
+          if [ "${{ github.event.inputs.auto_approve }}" = "true" ]; then
+            echo "Destroying infrastructure with auto-approve..."
+            terraform destroy -auto-approve
+          else
+            echo "Destroying infrastructure..."
+            terraform destroy
+          fi
+          echo "Infrastructure destruction completed"
+
+      - name: Output Results
+        if: github.event.inputs.action == 'apply'
+        run: |
+          echo "## Infrastructure Applied Successfully!"
+          echo ""
+          echo "### Key Outputs:"
+          terraform output
+
+      - name: Output Results
+        if: github.event.inputs.action == 'destroy'
+        run: |
+          echo "## Infrastructure Destroyed Successfully!"
+          echo ""
+          echo "All resources have been removed from AWS."

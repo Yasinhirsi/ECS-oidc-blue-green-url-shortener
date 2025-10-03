@@ -1,0 +1,98 @@
+name: Terraform Plan
+
+on:
+  workflow_dispatch:
+
+permissions:
+  security-events: write
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: eu-west-2
+  TF_CLI_ARGS: "-lock-timeout=10m"
+  TF_IN_AUTOMATION: true
+
+jobs:
+  terraform-plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: "./terraform"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: eu-west-2
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with: 
+          tflint_version: latest
+
+      - name: TFLint Scan
+        run: |
+          touch tflint-results.sarif
+          tflint --init
+          tflint --recursive --format sarif --out tflint-results.sarif
+        continue-on-error: true
+
+      - name: Upload TFLint results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('tflint-results.sarif') != ''
+        with:
+          sarif_file: 'tflint-results.sarif'
+        continue-on-error: true
+
+      - name: Checkov Security Scan
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: terraform/
+          framework: terraform
+          soft_fail: true
+          output_format: sarif
+          output_file_path: checkov-results.sarif
+
+      - name: Upload Checkov results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('checkov-results.sarif') != ''
+        with:
+          sarif_file: 'checkov-results.sarif'
+        continue-on-error: true
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.2
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Plan
+        run: |
+          terraform plan -input=false -no-color -out=tfplan
+          terraform show -no-color tfplan > plan.txt
+
+      - name: Upload Plan Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-${{ github.run_id }}
+          path: plan.txt
+
+      - name: Output Plan Results
+        run: |
+          echo "## Terraform Plan Results"
+          echo ""
+          cat plan.txt
