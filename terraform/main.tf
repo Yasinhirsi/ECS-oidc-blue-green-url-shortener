@@ -40,6 +40,7 @@ module "alb" {
   app_port                   = 8080
   healthcheck_path           = "/healthz"
   enable_deletion_protection = false
+  certificate_arn             = data.aws_acm_certificate.cert.arn
 }
 
 module "dynamodb" {
@@ -77,5 +78,16 @@ module "ecs" {
 
   target_group_arn = module.alb.blue_tg_arn
   desired_count    = var.desired_count
+}
+
+module "oidc" {
+  source = "./modules/oidc"
+
+  github_repo = var.github_repo
+
+  # Pass ARNs from other modules
+  ecs_execution_role_arn = module.ecs.execution_role_arn
+  ecs_task_role_arn      = module.ecs.task_role_arn
+  codedeploy_role_arn    = module.codedeploy.codedeploy_role_arn
 }
 

@@ -13,4 +13,9 @@ output "codedeploy_deployment_group_id" {
   value       = aws_codedeploy_deployment_group.url_dg.id
 }
 
+output "codedeploy_role_arn" {
+  description = "CodeDeploy role ARN"
+  value       = aws_iam_role.codedeploy_role.arn
+}
+
 

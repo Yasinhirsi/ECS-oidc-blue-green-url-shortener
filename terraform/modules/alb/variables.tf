@@ -37,5 +37,8 @@ variable "healthcheck_path" {
   default     = "/healthz"
 }
 
+variable "certificate_arn" {
+  description = "ACM certificate ARN for HTTPS listener"
+  type        = string
 
-
+}

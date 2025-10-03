@@ -3,4 +3,9 @@ output "alb_dns_name" {
   value       = module.alb.alb_dns_name
 }
 
+output "github_actions_role_arn" {
+  description = "ARN of the GitHub Actions IAM role for OIDC"
+  value       = module.oidc.github_actions_role_arn
+}
+
 

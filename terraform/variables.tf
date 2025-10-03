@@ -55,3 +55,8 @@ variable "domain_name" {
   type        = string
   default     = "tm.yasinhirsi.com"
 }
+
+variable "github_repo" {
+  description = "GitHub repository in format 'owner/repo' (e.g., 'CoderCo-Learning/url-shortener')"
+  type        = string
+}
