@@ -48,7 +48,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.6.0
+          terraform_version: 1.12.2
 
       - name: Terraform Init
         run: |
@@ -127,7 +127,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.6.0
+          terraform_version: 1.12.2
 
       - name: Terraform Init
         run: |
@@ -167,7 +167,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.6.0
+          terraform_version: 1.12.2
 
       - name: Require Manual Confirmation
         if: github.event.inputs.auto_approve != 'true'
@@ -231,7 +231,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.6.0
+          terraform_version: 1.12.2
 
       - name: Require Auto-approve for Destroy
         if: github.event.inputs.auto_approve != 'true'
