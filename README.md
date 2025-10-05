@@ -42,7 +42,7 @@ A production-grade URL shortening service deployed on AWS ECS Fargate with autom
 ## Architecture Decisions
 
 **VPC Endpoints vs NAT Gateway**  
-VPC Endpoints (~$21/month) eliminate NAT Gateway costs (~$64/month for 2 AZs). Trade-off: slight config complexity but significant cost savings.
+VPC Endpoints ($21 per month) eliminate NAT Gateway costs ($64 per month for 2 AZs). Trade-off: slight config complexity but significant cost savings.
 
 **Blue/Green with Canary**  
 10% canary for 5 minutes before full rollout. Trade-off: slower deployments (~6-7 min) but automatic rollback prevents bad releases.
