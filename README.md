@@ -13,7 +13,7 @@ A production-grade URL shortening service deployed on AWS ECS Fargate with autom
 
 ## Architecture
 
-![Architecture Diagram](./images/architecture-diagram.png)
+![Architecture Diagram](./images/architectureECSV2.png)
 
 ## Live Demo
 
