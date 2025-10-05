@@ -34,13 +34,13 @@ resource "aws_codedeploy_app" "url_shortener_codedeploy_app" {
 
 resource "aws_codedeploy_deployment_group" "url_dg" {
   app_name               = aws_codedeploy_app.url_shortener_codedeploy_app.name
-  deployment_config_name = "CodeDeployDefault.ECSAllAtOnce"
+  deployment_config_name = "CodeDeployDefault.ECSCanary10Percent5Minutes"
   deployment_group_name  = var.deployment_group_name
   service_role_arn       = aws_iam_role.codedeploy_role.arn
 
   auto_rollback_configuration {
     enabled = true
-    events  = ["DEPLOYMENT_FAILURE"]
+    events  = ["DEPLOYMENT_FAILURE", "DEPLOYMENT_STOP_ON_ALARM"]
   }
 
   blue_green_deployment_config {

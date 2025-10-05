@@ -16,40 +16,43 @@ resource "aws_iam_openid_connect_provider" "github" {
   }
 }
 
-# GitHub Actions IAM Role
-resource "aws_iam_role" "github_actions" {
-  name = "github-actions-url-shortener"
+resource "aws_iam_role" "github_actions_ci" {
+  name = "github-actions-ci"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Action = "sts:AssumeRoleWithWebIdentity"
-        Effect = "Allow"
-        Principal = {
-          Federated = aws_iam_openid_connect_provider.github.arn
-        }
+        Effect    = "Allow"
+        Principal = { Federated = aws_iam_openid_connect_provider.github.arn }
+        Action    = "sts:AssumeRoleWithWebIdentity"
         Condition = {
-          StringEquals = {
-            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          }
-          StringLike = {
-            "token.actions.githubusercontent.com:sub" = "repo:${var.github_repo}:*"
-          }
+          StringEquals = { "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com" }
+          StringLike   = { "token.actions.githubusercontent.com:sub" = "repo:${var.github_repo}:*" }
         }
       }
     ]
   })
 
-  tags = {
-    Name = "github-actions-url-shortener"
-  }
+  tags = { Name = "github-actions-ci" }
 }
 
-# Minimal permissions for GitHub Actions
-resource "aws_iam_policy" "github_actions_policy" {
-  name        = "github-actions-url-shortener-policy"
-  description = "Minimal permissions for GitHub Actions CI/CD"
+# Read-only across AWS for CI to avoid AccessDenied on describe/list
+resource "aws_iam_role_policy_attachment" "ci_readonly" {
+  role       = aws_iam_role.github_actions_ci.name
+  policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
+}
+
+# ECR push/pull permissions for CI
+resource "aws_iam_role_policy_attachment" "ci_ecr_poweruser" {
+  role       = aws_iam_role.github_actions_ci.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser"
+}
+
+# Minimal write actions for CI deployments (ECS/CodeDeploy + PassRole)
+resource "aws_iam_policy" "ci_writes" {
+  name        = "github-actions-ci-writes"
+  description = "Minimal write permissions for CI deploys"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -73,19 +76,20 @@ resource "aws_iam_policy" "github_actions_policy" {
           "codedeploy:GetDeployment",
           "codedeploy:GetDeploymentConfig",
           "codedeploy:RegisterApplicationRevision",
-          "codedeploy:GetApplicationRevision"
+          "codedeploy:GetApplicationRevision",
+          "codedeploy:GetApplication",
+          "codedeploy:GetDeploymentGroup"
         ]
         Resource = "*"
       },
       {
-        Sid    = "PassTaskRolesToECS"
-        Effect = "Allow"
-        Action = "iam:PassRole"
-        Resource = [
-          var.ecs_execution_role_arn,
-          var.ecs_task_role_arn,
-          var.codedeploy_role_arn
-        ]
+        Sid      = "PassTaskRolesToECS"
+        Effect   = "Allow"
+        Action   = "iam:PassRole"
+        Resource = "*"
+        Condition = {
+          StringEquals = { "iam:PassedToService" = "ecs-tasks.amazonaws.com" }
+        }
       },
       {
         Sid    = "S3CodeDeployBucket"
@@ -93,46 +97,75 @@ resource "aws_iam_policy" "github_actions_policy" {
         Action = [
           "s3:PutObject",
           "s3:GetObject",
-          "s3:DeleteObject"
-        ]
-        Resource = "arn:aws:s3:::url-shortener-codedeploy-revisions/*"
-      },
-      {
-        Sid    = "S3TerraformState"
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject",
           "s3:DeleteObject",
           "s3:ListBucket"
         ]
         Resource = [
-          "arn:aws:s3:::url-shortener-remote-tf-state",
-          "arn:aws:s3:::url-shortener-remote-tf-state/*"
+          "arn:aws:s3:::url-shortener-codedeploy-revisions",
+          "arn:aws:s3:::url-shortener-codedeploy-revisions/*"
         ]
-      },
-      {
-        Sid    = "DynamoDBTerraformLock"
-        Effect = "Allow"
-        Action = [
-          "dynamodb:GetItem",
-          "dynamodb:PutItem",
-          "dynamodb:DeleteItem"
-        ]
-        Resource = "arn:aws:dynamodb:eu-west-2:*:table/terraform-state-lock"
       }
     ]
   })
 }
 
-# Attach policy to role
-resource "aws_iam_role_policy_attachment" "github_actions_policy_attach" {
-  role       = aws_iam_role.github_actions.name
-  policy_arn = aws_iam_policy.github_actions_policy.arn
+resource "aws_iam_role_policy_attachment" "ci_writes_attach" {
+  role       = aws_iam_role.github_actions_ci.name
+  policy_arn = aws_iam_policy.ci_writes.arn
 }
 
-# Attach managed ECR policy
-resource "aws_iam_role_policy_attachment" "github_actions_ecr" {
-  role       = aws_iam_role.github_actions.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser"
+# Separate Terraform role with broad permissions (can be tightened later)
+resource "aws_iam_role" "github_actions_terraform" {
+  name = "github-actions-terraform"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect    = "Allow"
+        Principal = { Federated = aws_iam_openid_connect_provider.github.arn }
+        Action    = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = { "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com" }
+          StringLike   = { "token.actions.githubusercontent.com:sub" = "repo:${var.github_repo}:*" }
+        }
+      }
+    ]
+  })
+
+  tags = { Name = "github-actions-terraform" }
+}
+
+resource "aws_iam_policy" "terraform" {
+  name        = "github-actions-terraform-policy"
+  description = "Scoped permissions for Terraform to manage infrastructure"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "acm:*",
+          "route53:*",
+          "ec2:*",
+          "elasticloadbalancing:*",
+          "ecs:*",
+          "codedeploy:*",
+          "dynamodb:*",
+          "wafv2:*",
+          "logs:*",
+          "cloudwatch:*",
+          "iam:*",
+          "s3:*"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "tf_policy" {
+  role       = aws_iam_role.github_actions_terraform.name
+  policy_arn = aws_iam_policy.terraform.arn
 }

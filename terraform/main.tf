@@ -84,10 +84,5 @@ module "oidc" {
   source = "./modules/oidc"
 
   github_repo = var.github_repo
-
-  # Pass ARNs from other modules
-  ecs_execution_role_arn = module.ecs.execution_role_arn
-  ecs_task_role_arn      = module.ecs.task_role_arn
-  codedeploy_role_arn    = module.codedeploy.codedeploy_role_arn
 }
 
