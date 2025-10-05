@@ -65,10 +65,9 @@ resource "aws_vpc_security_group_egress_rule" "ecs-egress-to-endpoints" {
   referenced_security_group_id = aws_security_group.endpoints_sg.id
   from_port                    = 443
   to_port                      = 443
-  ip_protocol                  = "tcp" # semantically equivalent to all ports
+  ip_protocol                  = "tcp"
 }
 
-// TEMP: allow all egress to rule out connectivity issues
 resource "aws_vpc_security_group_egress_rule" "ecs_allow_all_egress" {
   security_group_id = aws_security_group.ecs_sg.id
   cidr_ipv4         = "0.0.0.0/0"

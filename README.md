@@ -15,6 +15,12 @@ A production-grade URL shortening service deployed on AWS ECS Fargate with autom
 
 ![Architecture Diagram](./images/architecture-diagram.png)
 
+## Live Demo
+
+![Frontend](./images/frontend.png)
+
+*Production URL shortener running on ECS Fargate with HTTPS and WAF protection.*
+
 ## Tech Stack
 
 **App**: Python FastAPI + DynamoDB  

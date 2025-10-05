@@ -21,6 +21,7 @@ module "security_groups" {
 
   // from root variables
   allow_all_cidr = var.allow_all_cidr
+  vpc_cidr       = var.vpc_cidr
 }
 
 module "endpoints" {

@@ -7,3 +7,8 @@ variable "allow_all_cidr" {
   description = "CIDR used for open ingress rules (e.g., 0.0.0.0/0)"
   type        = string
 }
+
+variable "vpc_cidr" {
+  description = "VPC CIDR block for DNS egress rule"
+  type        = string
+}
