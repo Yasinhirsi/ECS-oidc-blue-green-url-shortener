@@ -21,3 +21,6 @@ terraform/.terraform.lock.hcl
 
 ###
 backups
+
+# Workflow planning docs
+.github/WORKFLOWS_TO_CREATE.md

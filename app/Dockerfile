@@ -1,5 +1,3 @@
-### Example Dockerfile - i don't want to see copy and paste of this pls. Make your own and make sure it works. Make sure it's light, secure and instructions to run are there. 
-
 FROM python:3.11-slim AS build
 WORKDIR /w
 COPY requirements.txt .
