@@ -1,0 +1,121 @@
+name: Terraform Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Terraform action to perform'
+        required: true
+        default: 'apply'
+        type: choice
+        options:
+          - apply
+          - destroy
+      confirm:
+        description: 'Type "CONFIRM" to proceed'
+        required: true
+        type: string
+      auto_approve:
+        description: 'Auto-approve (required for destroy to avoid state lock)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  id-token: write
+  contents: read
+  security-events: write
+
+jobs:
+  terraform:
+    name: Terraform ${{ github.event.inputs.action }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    env:
+      AWS_REGION: eu-west-2
+      TF_CLI_ARGS: "-lock-timeout=10m"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "CONFIRM" ]; then
+            echo "Error: Must type 'CONFIRM' to proceed with ${{ github.event.inputs.action }}"
+            exit 1
+          fi
+          echo "Confirmation received for ${{ github.event.inputs.action }}"
+
+      - name: Require auto-approve for destroy
+        if: github.event.inputs.action == 'destroy' && github.event.inputs.auto_approve != 'true'
+        run: |
+          echo "Error: Destroy requires auto-approve to prevent state lock issues"
+          echo "Please check the 'Auto-approve' option"
+          exit 1
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: github-actions-terraform
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.2
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+        continue-on-error: true
+
+      - name: Terraform Plan
+        run: |
+          if [ "${{ github.event.inputs.action }}" = "destroy" ]; then
+            echo "Generating destroy plan..."
+            terraform plan -destroy -input=false -no-color
+          else
+            echo "Generating apply plan..."
+            terraform plan -input=false -no-color -out=tfplan
+          fi
+
+      - name: Terraform Apply
+        if: github.event.inputs.action == 'apply'
+        run: |
+          if [ "${{ github.event.inputs.auto_approve }}" = "true" ]; then
+            terraform apply -auto-approve tfplan
+          else
+            terraform apply tfplan
+          fi
+          echo "Infrastructure deployed successfully"
+
+      - name: Terraform Destroy
+        if: github.event.inputs.action == 'destroy'
+        run: |
+          terraform destroy -auto-approve
+          echo "Infrastructure destroyed successfully"
+
+      - name: Output results
+        if: github.event.inputs.action == 'apply' && success()
+        run: |
+          echo "## Infrastructure Applied" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Outputs:**" >> $GITHUB_STEP_SUMMARY
+          terraform output >> $GITHUB_STEP_SUMMARY
+
+      - name: Destroy confirmation
+        if: github.event.inputs.action == 'destroy' && success()
+        run: |
+          echo "## Infrastructure Destroyed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All resources have been removed from AWS" >> $GITHUB_STEP_SUMMARY
+
