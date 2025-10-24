@@ -35,7 +35,6 @@ jobs:
         working-directory: terraform
     env:
       AWS_REGION: eu-west-2
-      TF_CLI_ARGS: "-lock-timeout=10m"
 
     steps:
       - name: Checkout code
@@ -82,26 +81,26 @@ jobs:
         run: |
           if [ "${{ github.event.inputs.action }}" = "destroy" ]; then
             echo "Generating destroy plan..."
-            terraform plan -destroy -input=false -no-color
+            terraform plan -destroy -input=false -no-color -lock-timeout=10m
           else
             echo "Generating apply plan..."
-            terraform plan -input=false -no-color -out=tfplan
+            terraform plan -input=false -no-color -out=tfplan -lock-timeout=10m
           fi
 
       - name: Terraform Apply
         if: github.event.inputs.action == 'apply'
         run: |
           if [ "${{ github.event.inputs.auto_approve }}" = "true" ]; then
-            terraform apply -auto-approve tfplan
+            terraform apply -auto-approve -lock-timeout=10m tfplan
           else
-            terraform apply tfplan
+            terraform apply -lock-timeout=10m tfplan
           fi
           echo "Infrastructure deployed successfully"
 
       - name: Terraform Destroy
         if: github.event.inputs.action == 'destroy'
         run: |
-          terraform destroy -auto-approve
+          terraform destroy -auto-approve -lock-timeout=10m
           echo "Infrastructure destroyed successfully"
 
       - name: Output results
