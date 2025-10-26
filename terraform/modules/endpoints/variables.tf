@@ -1,5 +1,5 @@
 variable "region" {
-  description = "AWS region (used to build endpoint service names)"
+  description = "AWS region"
   type        = string
 }
 
