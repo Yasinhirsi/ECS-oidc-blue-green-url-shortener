@@ -47,7 +47,7 @@ variable "subnet_2_az" {
 }
 
 variable "allow_all_cidr" {
-  description = "CIDR used for open ingress rules (e.g., 0.0.0.0/0)"
+  description = "CIDR used for open ingress rules"
   type        = string
   default     = "0.0.0.0/0"
 }
@@ -66,7 +66,7 @@ variable "domain_name" {
 }
 
 variable "github_repo" {
-  description = "GitHub repository in format 'owner/repo' (e.g., 'Yasinhirsi/ECS-oidc-blue-green-url-shortener')"
+  description = "GitHub repo"
   type        = string
   default     = "Yasinhirsi/ECS-oidc-blue-green-url-shortener"
 }
