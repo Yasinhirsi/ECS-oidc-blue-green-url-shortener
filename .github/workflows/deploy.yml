@@ -1,10 +1,10 @@
-name: Deploy to ECS via CodeDeploy
+name: Deploy to ECS
 
 on:
   workflow_dispatch:
     inputs:
       image-tag:
-        description: 'Image tag to deploy (leave empty for latest)'
+        description: 'Image tag (leave empty for latest)'
         required: false
         type: string
 
@@ -14,133 +14,67 @@ permissions:
 
 jobs:
   deploy:
-    name: Deploy via CodeDeploy
+    name: Deploy
     runs-on: ubuntu-latest
     env:
       AWS_REGION: eu-west-2
-      ECS_CLUSTER: url-short-ecs
-      ECS_SERVICE: url-shortener-service
       ECS_TASK_FAMILY: url-shortener
       CODEDEPLOY_APP: url-shortener-codedeploy-app
       CODEDEPLOY_GROUP: url-shortener-dg
       S3_BUCKET: url-shortener-codedeploy-revisions
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials via OIDC
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          role-session-name: github-actions-deploy
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Get image URI
-        id: get-image
+        id: image
         run: |
-          if [ -n "${{ github.event.inputs.image-tag }}" ]; then
-            # Use specified tag
-            IMAGE_TAG="${{ github.event.inputs.image-tag }}"
+          if [ -n "${{ inputs.image-tag }}" ]; then
+            TAG="${{ inputs.image-tag }}"
           else
-            # Get latest image tag from ECR
-            IMAGE_TAG=$(aws ecr describe-images \
-              --repository-name url-shortener \
-              --region ${{ env.AWS_REGION }} \
-              --query 'sort_by(imageDetails,& imagePushedAt)[-1].imageTags[0]' \
-              --output text)
+            TAG=$(aws ecr describe-images --repository-name url-shortener --query 'sort_by(imageDetails,& imagePushedAt)[-1].imageTags[0]' --output text)
           fi
-          
-          REGISTRY=$(aws ecr describe-repositories \
-            --repository-names url-shortener \
-            --region ${{ env.AWS_REGION }} \
-            --query 'repositories[0].repositoryUri' \
-            --output text | cut -d'/' -f1)
-          
-          IMAGE_URI="$REGISTRY/url-shortener:$IMAGE_TAG"
-          echo "image-uri=$IMAGE_URI" >> $GITHUB_OUTPUT
-          echo "Deploying image: $IMAGE_URI"
+          REGISTRY=$(aws ecr describe-repositories --repository-names url-shortener --query 'repositories[0].repositoryUri' --output text | cut -d'/' -f1)
+          IMAGE_URI="$REGISTRY/url-shortener:$TAG"
+          echo "uri=$IMAGE_URI" >> $GITHUB_OUTPUT
 
       - name: Get current task definition
         run: |
-          aws ecs describe-task-definition \
-            --task-definition ${{ env.ECS_TASK_FAMILY }} \
-            --query 'taskDefinition' \
-            --output json > task-def.json
-          
-          cat task-def.json | jq 'del(
-            .taskDefinitionArn,
-            .revision,
-            .status,
-            .requiresAttributes,
-            .compatibilities,
-            .registeredAt,
-            .registeredBy
-          )' > task-def-clean.json
+          aws ecs describe-task-definition --task-definition ${{ env.ECS_TASK_FAMILY }} --query taskDefinition > task-def.json
+          jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' task-def.json > task-def-clean.json
 
-      - name: Update task definition with new image
+      - name: Update task definition
         run: |
-          jq --arg img "${{ steps.get-image.outputs.image-uri }}" \
-            '.containerDefinitions[0].image = $img' \
-            task-def-clean.json > new-task-def.json
+          jq --arg img "${{ steps.image.outputs.uri }}" '.containerDefinitions[0].image = $img' task-def-clean.json > new-task-def.json
 
-      - name: Register new task definition
-        id: register-task
+      - name: Register task definition
+        id: task
         run: |
-          TASK_ARN=$(aws ecs register-task-definition \
-            --cli-input-json file://new-task-def.json \
-            --query 'taskDefinition.taskDefinitionArn' \
-            --output text)
-          echo "task-arn=$TASK_ARN" >> $GITHUB_OUTPUT
-          echo "Registered task definition: $TASK_ARN"
+          ARN=$(aws ecs register-task-definition --cli-input-json file://new-task-def.json --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "arn=$ARN" >> $GITHUB_OUTPUT
 
-      - name: Update appspec.yml with new task definition
+      - name: Update appspec.yml
         run: |
-          sed -i "s|TaskDefinition: \".*\"|TaskDefinition: \"${{ steps.register-task.outputs.task-arn }}\"|g" revisions/appspec.yml
-          echo "Updated appspec.yml:"
-          cat revisions/appspec.yml
-
-      - name: Upload appspec.yml to S3
-        run: |
+          sed -i "s|TaskDefinition: \".*\"|TaskDefinition: \"${{ steps.task.outputs.arn }}\"|g" revisions/appspec.yml
           aws s3 cp revisions/appspec.yml s3://${{ env.S3_BUCKET }}/appspec.yml
-          echo "Uploaded to s3://${{ env.S3_BUCKET }}/appspec.yml"
 
-      - name: Create CodeDeploy deployment
+      - name: Create deployment
         id: deploy
         run: |
-          DEPLOYMENT_ID=$(aws deploy create-deployment \
+          ID=$(aws deploy create-deployment \
             --application-name ${{ env.CODEDEPLOY_APP }} \
             --deployment-group-name ${{ env.CODEDEPLOY_GROUP }} \
             --s3-location bucket=${{ env.S3_BUCKET }},key=appspec.yml,bundleType=YAML \
-            --description "Deploy from GitHub Actions run ${{ github.run_number }}" \
-            --query 'deploymentId' \
-            --output text)
-          echo "deployment-id=$DEPLOYMENT_ID" >> $GITHUB_OUTPUT
-          echo "Created deployment: $DEPLOYMENT_ID"
+            --query deploymentId --output text)
+          echo "id=$ID" >> $GITHUB_OUTPUT
 
-      - name: Wait for deployment to complete
+      - name: Wait for deployment
         run: |
-          echo "Waiting for deployment ${{ steps.deploy.outputs.deployment-id }} to complete..."
-          aws deploy wait deployment-successful \
-            --deployment-id ${{ steps.deploy.outputs.deployment-id }}
-          echo "Deployment completed successfully!"
-
-      - name: Get deployment status
-        if: always()
-        run: |
-          aws deploy get-deployment \
-            --deployment-id ${{ steps.deploy.outputs.deployment-id }} \
-            --query 'deploymentInfo.{Status:status,Creator:creator,Created:createTime,Completed:completeTime}' \
-            --output table
-
-      - name: Deployment summary
-        if: success()
-        run: |
-          echo "## Deployment Successful" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Details:**" >> $GITHUB_STEP_SUMMARY
-          echo "- Image: \`${{ steps.get-image.outputs.image-uri }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Task Definition: \`${{ steps.register-task.outputs.task-arn }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Deployment ID: \`${{ steps.deploy.outputs.deployment-id }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- ECS Service: \`${{ env.ECS_SERVICE }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Cluster: \`${{ env.ECS_CLUSTER }}\`" >> $GITHUB_STEP_SUMMARY
+          aws deploy wait deployment-successful --deployment-id ${{ steps.deploy.outputs.id }}
