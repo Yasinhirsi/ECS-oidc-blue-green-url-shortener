@@ -1,12 +1,10 @@
 name: Build and Push to ECR
 
 on:
-  workflow_dispatch: #for testing
+  workflow_dispatch:
   push:
-    branches:
-      - main
-    paths:
-      - 'app/**'
+    branches: [main]
+    paths: ['app/**']
 
 permissions:
   id-token: write
@@ -15,58 +13,48 @@ permissions:
 
 jobs:
   build-and-push:
-    name: Build and Push Docker Image
+    name: Build and Push
     runs-on: ubuntu-latest
     env:
       ECR_REPOSITORY: url-shortener
       AWS_REGION: eu-west-2
     
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set short SHA
-        run: echo "SHORT_SHA=${GITHUB_SHA:0:7}" >> $GITHUB_ENV
+      - name: Set image tag
+        run: echo "IMAGE_TAG=${GITHUB_SHA:0:7}" >> $GITHUB_ENV
 
-      - name: Configure AWS credentials via OIDC
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          role-session-name: github-actions-ci
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
+      - name: Login to ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build Docker image
+      - name: Build image
         run: |
-          docker build -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.SHORT_SHA }} ./app
+          docker build -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} ./app
 
-      - name: Scan image with Trivy
+      - name: Scan with Trivy
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.SHORT_SHA }}
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
           format: sarif
           output: trivy-results.sarif
-          severity: CRITICAL,HIGH
+          severity: CRITICAL
+          exit-code: 1
 
-      - name: Upload Trivy results to Security tab
-        uses: github/codeql-action/upload-sarif@v3
+      - name: Upload scan results
         if: always()
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-results.sarif
 
       - name: Push to ECR
         run: |
-          docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.SHORT_SHA }}
-          echo "Image pushed: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.SHORT_SHA }}"
-
-      - name: Output image URI
-        run: |
-          echo "## Image Built and Pushed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image URI for deployment:**" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.SHORT_SHA }}" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}

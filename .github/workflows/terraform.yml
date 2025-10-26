@@ -117,4 +117,3 @@ jobs:
           echo "## Infrastructure Destroyed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "All resources have been removed from AWS" >> $GITHUB_STEP_SUMMARY
-

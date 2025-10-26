@@ -3,9 +3,9 @@ name: Deploy to ECS via CodeDeploy
 on:
   workflow_dispatch:
     inputs:
-      image-uri:
-        description: 'Full ECR image URI (e.g., 123456789.dkr.ecr.eu-west-2.amazonaws.com/url-shortener:abc1234)'
-        required: true
+      image-tag:
+        description: 'Image tag to deploy (leave empty for latest)'
+        required: false
         type: string
 
 permissions:
@@ -36,6 +36,31 @@ jobs:
           role-session-name: github-actions-deploy
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Get image URI
+        id: get-image
+        run: |
+          if [ -n "${{ github.event.inputs.image-tag }}" ]; then
+            # Use specified tag
+            IMAGE_TAG="${{ github.event.inputs.image-tag }}"
+          else
+            # Get latest image tag from ECR
+            IMAGE_TAG=$(aws ecr describe-images \
+              --repository-name url-shortener \
+              --region ${{ env.AWS_REGION }} \
+              --query 'sort_by(imageDetails,& imagePushedAt)[-1].imageTags[0]' \
+              --output text)
+          fi
+          
+          REGISTRY=$(aws ecr describe-repositories \
+            --repository-names url-shortener \
+            --region ${{ env.AWS_REGION }} \
+            --query 'repositories[0].repositoryUri' \
+            --output text | cut -d'/' -f1)
+          
+          IMAGE_URI="$REGISTRY/url-shortener:$IMAGE_TAG"
+          echo "image-uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+          echo "Deploying image: $IMAGE_URI"
+
       - name: Get current task definition
         run: |
           aws ecs describe-task-definition \
@@ -55,7 +80,7 @@ jobs:
 
       - name: Update task definition with new image
         run: |
-          jq --arg img "${{ github.event.inputs.image-uri }}" \
+          jq --arg img "${{ steps.get-image.outputs.image-uri }}" \
             '.containerDefinitions[0].image = $img' \
             task-def-clean.json > new-task-def.json
 
@@ -114,7 +139,7 @@ jobs:
           echo "## Deployment Successful" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Details:**" >> $GITHUB_STEP_SUMMARY
-          echo "- Image: \`${{ github.event.inputs.image-uri }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Image: \`${{ steps.get-image.outputs.image-uri }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- Task Definition: \`${{ steps.register-task.outputs.task-arn }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- Deployment ID: \`${{ steps.deploy.outputs.deployment-id }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- ECS Service: \`${{ env.ECS_SERVICE }}\`" >> $GITHUB_STEP_SUMMARY
