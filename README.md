@@ -65,34 +65,3 @@ PAY_PER_REQUEST model. Trade-off: higher per-request cost but zero idle charges 
 ### VPC Endpoints
 ![VPC Endpoints](./images/vpcEndpoints.png)
 
-## Local Deployment / Setup
-
-### Terraform Configuration
-
-In `terraform/variables.tf` adjust:
-- `github_repo` → your GitHub repo name (used in OIDC trust policy)
-- `region` → AWS region (default: `eu-west-2`)
-- `certificate_arn` → your ACM certificate ARN for HTTPS
-
-### Bootstrap
-
-```bash
-cd terraform
-terraform init
-terraform apply -target=module.oidc  # Create OIDC roles first
-terraform apply                       # Deploy full infrastructure
-```
-
-### Teardown
-
-```bash
-terraform destroy -auto-approve
-```
-
-## Notes
-
-- CodeDeploy controls image versions dynamically — no need to hardcode in Terraform
-- GitHub secrets required: `AWS_ROLE_ARN` (CI role), `AWS_TF_ROLE_ARN` (Terraform role)
----
-
-
